@@ -408,6 +408,18 @@
       },
       "Body_process_ocr_ai_ocr_post": {
         "properties": {
+          "document_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional document type (e.g. id_card, passport) used to pick a per-document-type review threshold",
+            "title": "Document Type"
+          },
           "image": {
             "description": "Image file to process",
             "format": "binary",
@@ -445,6 +457,18 @@
             ],
             "description": "JSON encoded AnchorMetadata",
             "title": "Anchor Metadata"
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional document type (e.g. id_card, passport) used to pick a per-document-type review threshold",
+            "title": "Document Type"
           },
           "image": {
             "description": "Image file to process",
@@ -524,6 +548,18 @@
             ],
             "description": "JSON encoded AnchorMetadata",
             "title": "Anchor Metadata"
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional document type (e.g. id_card, passport) used to pick a per-document-type review threshold",
+            "title": "Document Type"
           },
           "image": {
             "description": "Image file to process",
@@ -1388,9 +1424,22 @@
         "title": "LanguageHint",
         "type": "string"
       },
+      "OCRConfidenceBand": {
+        "description": "Reliability band derived from the configured OCR thresholds.",
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "OCRConfidenceBand",
+        "type": "string"
+      },
       "OCRData": {
         "examples": [
           {
+            "confidence": 0.925,
+            "confidence_band": "high",
+            "document_type": "id_card",
             "fields": {
               "full_name": {
                 "confidence": 0.95,
@@ -1401,11 +1450,59 @@
                 "value": "123456789"
               }
             },
+            "needs_review": false,
             "processing_time_ms": 1500,
-            "raw_text": "John Doe\nID: 123456789"
+            "raw_text": "John Doe\nID: 123456789",
+            "review_threshold": 0.75
           }
         ],
         "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean confidence across the detected fields, or null when no field carried a confidence value.",
+            "examples": [
+              0.91
+            ],
+            "title": "Confidence"
+          },
+          "confidence_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OCRConfidenceBand"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "high/medium/low band derived from the configured thresholds.",
+            "examples": [
+              "high"
+            ]
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Document type used to select the review threshold, when supplied.",
+            "examples": [
+              "id_card"
+            ],
+            "title": "Document Type"
+          },
           "fields": {
             "additionalProperties": {
               "$ref": "#/components/schemas/OCRFieldResult"
@@ -1425,6 +1522,15 @@
             "title": "Fields",
             "type": "object"
           },
+          "needs_review": {
+            "default": false,
+            "description": "True when the extraction is missing confidence or falls below the review threshold; a human should verify the document.",
+            "examples": [
+              false
+            ],
+            "title": "Needs Review",
+            "type": "boolean"
+          },
           "processing_time_ms": {
             "examples": [
               1500
@@ -1438,6 +1544,23 @@
             ],
             "title": "Raw Text",
             "type": "string"
+          },
+          "review_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Review threshold in force for this document type.",
+            "examples": [
+              0.75
+            ],
+            "title": "Review Threshold"
           }
         },
         "required": [

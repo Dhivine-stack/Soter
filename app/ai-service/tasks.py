@@ -414,6 +414,7 @@ def _process_ocr(payload: Dict[str, Any]) -> Dict[str, Any]:
             image_base64,
             payload.get("anchor_metadata"),
             language_hint=payload.get("language_hint"),
+            document_type=payload.get("document_type"),
         ),
     }
 

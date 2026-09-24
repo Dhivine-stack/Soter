@@ -194,6 +194,26 @@ class Settings(BaseSettings):
     fraud_pass_max_score: float = 0.40
     fraud_review_max_score: float = 0.75
 
+    # OCR confidence banding / manual-review routing (issue #984).
+    # A low-confidence OCR extraction must not be treated as authoritative.
+    # The aggregate score is the mean of the per-field confidences in [0, 1];
+    # scores below ``ocr_confidence_review_threshold`` are flagged for review
+    # (band "low"), scores at/above ``ocr_confidence_high_threshold`` are band
+    # "high", and everything between is "medium".  A result carrying no
+    # confidence at all is always flagged for review.  Per-document-type
+    # overrides for the review threshold can be supplied as a JSON object in
+    # OCR_CONFIDENCE_THRESHOLDS_BY_DOCUMENT_TYPE.
+    ocr_confidence_review_threshold: float = 0.75
+    ocr_confidence_high_threshold: float = 0.90
+    ocr_confidence_thresholds_by_document_type: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "id_card": 0.80,
+            "passport": 0.85,
+            "invoice": 0.70,
+            "receipt": 0.70,
+        }
+    )
+
     # Application settings
     app_env: Literal["development", "staging", "production", "test"] = "development"
     log_level: str = "INFO"
@@ -413,6 +433,38 @@ class Settings(BaseSettings):
                 f"FRAUD_REVIEW_MAX_SCORE (got {self.fraud_pass_max_score} >= "
                 f"{self.fraud_review_max_score})",
             )
+
+        # --- OCR confidence banding thresholds (issue #984) ---------------
+        if not 0.0 <= self.ocr_confidence_review_threshold <= 1.0:
+            _add(
+                "OCR_CONFIDENCE_REVIEW_THRESHOLD",
+                "must be between 0.0 and 1.0 "
+                f"(got {self.ocr_confidence_review_threshold})",
+            )
+        if not 0.0 <= self.ocr_confidence_high_threshold <= 1.0:
+            _add(
+                "OCR_CONFIDENCE_HIGH_THRESHOLD",
+                "must be between 0.0 and 1.0 "
+                f"(got {self.ocr_confidence_high_threshold})",
+            )
+        if self.ocr_confidence_review_threshold > self.ocr_confidence_high_threshold:
+            _add(
+                "OCR_CONFIDENCE_REVIEW_THRESHOLD / OCR_CONFIDENCE_HIGH_THRESHOLD",
+                "OCR_CONFIDENCE_REVIEW_THRESHOLD must not exceed "
+                "OCR_CONFIDENCE_HIGH_THRESHOLD (got "
+                f"{self.ocr_confidence_review_threshold} > "
+                f"{self.ocr_confidence_high_threshold})",
+            )
+        for (
+            document_type,
+            threshold,
+        ) in self.ocr_confidence_thresholds_by_document_type.items():
+            if not 0.0 <= threshold <= 1.0:
+                _add(
+                    "OCR_CONFIDENCE_THRESHOLDS_BY_DOCUMENT_TYPE",
+                    f"document type '{document_type}' threshold must be "
+                    f"between 0.0 and 1.0 (got {threshold})",
+                )
 
         # --- CORS origins: entries must be absolute origins --------------
         for key, raw in (
