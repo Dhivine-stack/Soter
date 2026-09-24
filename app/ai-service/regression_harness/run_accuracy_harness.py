@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from regression_harness.calibration import (
+    DEFAULT_CALIBRATION_REPORT,
+    compute_calibration,
+    write_calibration_report,
+)
+
 if TYPE_CHECKING:
     from regression_harness.deterministic_provider import (
         DeterministicVerificationProvider,
@@ -16,6 +22,7 @@ if TYPE_CHECKING:
 
 LABELS = ["approve", "reject", "ambiguous"]
 BASELINE_TOLERANCE = 1e-6
+MISCALIBRATION_EXIT_CODE = 3
 
 
 def load_fixtures(fixtures_path: str) -> List[Dict[str, Any]]:
@@ -156,6 +163,39 @@ def print_summary(metrics: Dict[str, Any], outcomes: List[Dict[str, Any]]) -> No
     print("=" * 68 + "\n")
 
 
+def print_calibration(calibration: Dict[str, Any]) -> None:
+    """Print the confidence calibration table and flag miscalibrated bands."""
+    print("-" * 68)
+    print(" CONFIDENCE CALIBRATION")
+    print("-" * 68)
+    print(
+        f"  {'band':<22} {'cases':>5} {'acc':>7} "
+        f"{'conf':>7} {'gap':>8}  status"
+    )
+    for band in calibration["bands"]:
+        print(
+            f"  {band['band']:<22} {band['count']:>5} "
+            f"{band['accuracy']:>7.4f} {band['mean_confidence']:>7.4f} "
+            f"{band['gap']:>+8.4f}  {band['status']}"
+        )
+    print(
+        f"  Expected calibration error: "
+        f"{calibration['expected_calibration_error']:.4f}"
+    )
+    flagged = calibration.get("flagged_bands", [])
+    if flagged:
+        print("  MISCALIBRATION FLAGGED:")
+        for flag in flagged:
+            print(
+                f"    - {flag['band']}: accuracy {flag['accuracy']:.4f} vs "
+                f"stated confidence {flag['mean_confidence']:.4f} "
+                f"({flag['direction']}, gap {flag['gap']:+.4f})"
+            )
+    else:
+        print("  No band exceeds the miscalibration tolerance.")
+    print("-" * 68 + "\n")
+
+
 def load_baseline(baseline_path: str) -> Optional[Dict[str, Any]]:
     """Read the baseline metrics, or return None when the file is missing."""
     if not os.path.exists(baseline_path):
@@ -220,6 +260,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--output",
         help="Optional path to write a machine-readable JSON report",
     )
+    parser.add_argument(
+        "--calibration-report",
+        default=DEFAULT_CALIBRATION_REPORT,
+        help="Path to write the committed confidence calibration Markdown report",
+    )
+    parser.add_argument(
+        "--fail-on-miscalibration",
+        action="store_true",
+        help=(
+            "Exit with code 3 when a confidence band is miscalibrated "
+            "(off by default so the daily regression run is not broken by "
+            "a known calibration gap)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -248,9 +302,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     provider = DeterministicVerificationProvider()
     outcomes = run_suite(cases, provider)
     metrics = compute_metrics(outcomes)
+    calibration = compute_calibration(outcomes)
 
+    generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     result = {
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "generated_at": generated_at,
         "provider": "deterministic-fixture",
         "configuration": {
             "prompt_execution": "current HumanitarianPromptEngine code",
@@ -258,10 +314,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         },
         "fixture_count": len(cases),
         "metrics": metrics,
+        "calibration": calibration,
         "cases": outcomes,
     }
 
     print_summary(metrics, outcomes)
+    print_calibration(calibration)
+
+    if args.calibration_report:
+        try:
+            written = write_calibration_report(
+                calibration,
+                args.calibration_report,
+                generated_at=generated_at,
+                fixture_count=len(cases),
+                overall_accuracy=metrics["accuracy"],
+            )
+            print(f"Calibration report written to {written}")
+        except OSError as exc:
+            print(f"WARNING: could not write calibration report: {exc}")
 
     baseline = load_baseline(baseline_path)
     diffs = compare_with_baseline(metrics, baseline) if baseline else []
@@ -274,20 +345,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             json.dump(result, f, indent=2)
         print(f"Report written to {args.output}")
 
+    exit_code = 0
     if args.update_baseline:
         with open(baseline_path, "w") as f:
             json.dump(metrics, f, indent=2)
         print(f"Baseline written to {baseline_path}")
-        return 0
-
-    if baseline is None:
+    elif baseline is None:
         print(
             "WARNING: baseline metrics not found. "
             "Run with --update-baseline to create a baseline."
         )
-        return 0
-
-    if diffs:
+    elif diffs:
         print("METRIC REGRESSION DETECTED - current run differs from baseline:")
         for diff in diffs:
             print(
@@ -295,10 +363,25 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"current={diff['current']}"
             )
         print("Run with --update-baseline to accept the new metrics as baseline.")
-        return 1
+        exit_code = 1
+    else:
+        print("Metrics match baseline. No regression detected.")
 
-    print("Metrics match baseline. No regression detected.")
-    return 0
+    if args.fail_on_miscalibration and not calibration["is_calibrated"]:
+        print(
+            "CONFIDENCE MISCALIBRATION DETECTED - "
+            f"{len(calibration['flagged_bands'])} band(s) exceed the "
+            f"{calibration['tolerance']} tolerance:"
+        )
+        for flag in calibration["flagged_bands"]:
+            print(
+                f"  {flag['band']}: accuracy={flag['accuracy']} "
+                f"mean_confidence={flag['mean_confidence']} "
+                f"({flag['direction']})"
+            )
+        exit_code = MISCALIBRATION_EXIT_CODE
+
+    return exit_code
 
 
 if __name__ == "__main__":
