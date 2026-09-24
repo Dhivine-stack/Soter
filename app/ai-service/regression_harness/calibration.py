@@ -114,9 +114,7 @@ def compute_calibration(
         bucket = buckets[label]
         count = bucket["count"]
         accuracy = round(bucket["correct"] / count, 4) if count else 0.0
-        mean_confidence = (
-            round(bucket["confidence_sum"] / count, 4) if count else 0.0
-        )
+        mean_confidence = round(bucket["confidence_sum"] / count, 4) if count else 0.0
         gap = round(mean_confidence - accuracy, 4)
         if count == 0:
             status = "empty"
@@ -147,16 +145,12 @@ def compute_calibration(
                     "accuracy": accuracy,
                     "mean_confidence": mean_confidence,
                     "gap": gap,
-                    "direction": (
-                        "overconfident" if gap > 0 else "underconfident"
-                    ),
+                    "direction": ("overconfident" if gap > 0 else "underconfident"),
                 }
             )
 
     unscored_accuracy = (
-        round(unscored["correct"] / unscored["count"], 4)
-        if unscored["count"]
-        else 0.0
+        round(unscored["correct"] / unscored["count"], 4) if unscored["count"] else 0.0
     )
     unscored["accuracy"] = unscored_accuracy
 
@@ -239,7 +233,9 @@ def render_calibration_markdown(
             f"`{calibration['tolerance']}` away from their stated confidence:"
         )
         lines.append("")
-        lines.append("| Band | Cases | Accuracy | Mean stated confidence | Gap | Direction |")
+        lines.append(
+            "| Band | Cases | Accuracy | Mean stated confidence | Gap | Direction |"
+        )
         lines.append("| --- | ---: | ---: | ---: | ---: | --- |")
         for flag in flagged:
             lines.append(
@@ -270,8 +266,8 @@ def render_calibration_markdown(
         "",
         "- Confidence here is the value the verification service reports for "
         "its predicted verdict, measured against the human-annotated golden "
-        "label; the report therefore answers \"when the service says 0.9, is "
-        "it right roughly 90% of the time?\"",
+        'label; the report therefore answers "when the service says 0.9, is '
+        'it right roughly 90% of the time?"',
         "- The deterministic fixture provider always runs offline, so the "
         "report is fully reproducible.",
         "- Re-run the harness (or the scheduled `.github/workflows/ai-regression.yml` "

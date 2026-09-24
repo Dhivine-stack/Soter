@@ -168,10 +168,7 @@ def print_calibration(calibration: Dict[str, Any]) -> None:
     print("-" * 68)
     print(" CONFIDENCE CALIBRATION")
     print("-" * 68)
-    print(
-        f"  {'band':<22} {'cases':>5} {'acc':>7} "
-        f"{'conf':>7} {'gap':>8}  status"
-    )
+    print(f"  {'band':<22} {'cases':>5} {'acc':>7} " f"{'conf':>7} {'gap':>8}  status")
     for band in calibration["bands"]:
         print(
             f"  {band['band']:<22} {band['count']:>5} "
